@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (httpCode !in 200..299) {
-                    error("Group ID/Password जाँचें")
+                    error("Server HTTP $httpCode: $text")
                 }
 
                 val json = JSONObject(text)
