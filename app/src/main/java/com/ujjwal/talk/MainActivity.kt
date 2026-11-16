@@ -1,23 +1,13 @@
-
 package com.ujjwal.talk
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,366 +15,181 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
-import io.livekit.android.LiveKit
-import io.livekit.android.room.Room
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
-
-private const val TOKEN_ENDPOINT =
-    "https://ujjwal-talk.ujjwal8228801702.workers.dev"
-
-private const val GROUP_ID = "UJJWAL10"
 
 class MainActivity : ComponentActivity() {
-
-    private var room: Room? = null
-    private val http = OkHttpClient()
-
-    private var connected by mutableStateOf(false)
-    private var status by mutableStateOf("ग्रुप से जुड़ने के लिए Connect दबाएँ")
-    private var busy by mutableStateOf(false)
-    private var groupPassword by mutableStateOf("")
-    private var memberName by mutableStateOf("Member")
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) connectGroup()
-        else status = "माइक्रोफोन अनुमति जरूरी है"
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        setContent {
-            UjjwalTalkScreen(
-                connected = connected,
-                status = status,
-                busy = busy,
-                password = groupPassword,
-                onPassword = { groupPassword = it },
-                name = memberName,
-                onName = { memberName = it },
-                onConnect = { ensurePermissionAndConnect() },
-                onTalkStart = { setTalking(true) },
-                onTalkEnd = { setTalking(false) }
-            )
-        }
-    }
-
-    private fun ensurePermissionAndConnect() {
-        if (
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            connectGroup()
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
-    private fun connectGroup() {
-        if (groupPassword.isBlank()) {
-            status = "Group Password डालें"
-            return
-        }
-
-        lifecycleScope.launch {
-            busy = true
-            status = "कनेक्ट हो रहा है…"
-
-            try {
-                val payload = JSONObject()
-                    .put("groupId", GROUP_ID)
-                    .put("password", groupPassword)
-                    .put("identity", memberName.ifBlank { "Member" })
-
-                val body = payload.toString()
-                    .toRequestBody("application/json".toMediaType())
-
-                val request = Request.Builder()
-                    .url(TOKEN_ENDPOINT)
-                    .post(body)
-                    .build()
-
-                val (httpCode, text) = withContext(Dispatchers.IO) {
-                    http.newCall(request).execute().use { response ->
-                        response.code to response.body?.string().orEmpty()
-                    }
-                }
-
-                if (httpCode !in 200..299) {
-                    error("Server HTTP $httpCode: $text")
-                }
-
-                val json = JSONObject(text)
-                val wsUrl = json.getString("url")
-                val token = json.getString("token")
-
-                val newRoom = LiveKit.create(applicationContext)
-                newRoom.connect(wsUrl, token)
-                newRoom.localParticipant.setMicrophoneEnabled(false)
-
-                room = newRoom
-                connected = true
-                status = "Connected • Ujjwal Permanent Group"
-
-                ContextCompat.startForegroundService(
-                    this@MainActivity,
-                    Intent(this@MainActivity, TalkService::class.java)
-                )
-
-            } catch (e: Exception) {
-                status = "कनेक्शन नहीं हुआ: ${e.message ?: "नेटवर्क जाँचें"}"
-            } finally {
-                busy = false
-            }
-        }
-    }
-
-    private fun setTalking(enabled: Boolean) {
-        lifecycleScope.launch {
-            try {
-                room?.localParticipant?.setMicrophoneEnabled(enabled)
-            } catch (_: Exception) {
-                status = "माइक शुरू नहीं हो पाया"
-            }
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Room lifecycle अभी पूरी तरह background service में स्थानांतरित नहीं है।
+        setContent { UjjwalVoiceScreen() }
     }
 }
 
 @Composable
-private fun UjjwalTalkScreen(
-    connected: Boolean,
-    status: String,
-    busy: Boolean,
-    password: String,
-    onPassword: (String) -> Unit,
-    name: String,
-    onName: (String) -> Unit,
-    onConnect: () -> Unit,
-    onTalkStart: () -> Unit,
-    onTalkEnd: () -> Unit
-) {
-    val navy = Color(0xFF06142F)
-    val blue = Color(0xFF087CFF)
+private fun UjjwalVoiceScreen() {
+    var phone by remember { mutableStateOf("") }
+    var notice by remember { mutableStateOf("अपना मोबाइल नंबर डालकर यूज़र खोजें") }
+
+    val navy = Color(0xFF071326)
+    val panel = Color(0xFF11243D)
+    val cyan = Color(0xFF35D6E8)
 
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = blue,
+            primary = cyan,
             background = navy,
-            surface = Color(0xFF10264D)
+            surface = panel,
+            onSurface = Color.White
         )
     ) {
-        Column(
-            Modifier
+        Box(
+            modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xFF071A43), navy)
+                        listOf(Color(0xFF102B4B), navy, Color(0xFF050B16))
                     )
                 )
-                .padding(22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 22.dp, vertical = 28.dp)
         ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.size(52.dp),
+                        shape = RoundedCornerShape(17.dp),
+                        color = Color(0xFF123E5B)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("UV", color = cyan, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                    Spacer(Modifier.width(13.dp))
+                    Column {
+                        Text("UJJWAL VOICE", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("PRIVATE INTERNET CALLING", color = Color(0xFF8FAFCB), fontSize = 10.sp, letterSpacing = 1.5.sp)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Surface(shape = CircleShape, color = Color(0xFF173A37)) {
+                        Text(" BETA ", color = Color(0xFF7BE3B0), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+                    }
+                }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Radio,
-                    null,
-                    tint = Color.Cyan,
-                    modifier = Modifier.size(42.dp)
-                )
+                Spacer(Modifier.height(38.dp))
 
-                Spacer(Modifier.width(10.dp))
+                Box(
+                    modifier = Modifier
+                        .size(142.dp)
+                        .background(Color(0xFF123A58), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(112.dp)
+                            .background(Color(0xFF176080), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("☎", color = Color.White, fontSize = 55.sp)
+                    }
+                }
 
+                Spacer(Modifier.height(24.dp))
+                Text("आवाज़ से जुड़ें", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(7.dp))
                 Text(
-                    "Ujjwal Talk",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
+                    "अपने Ujjwal Voice अकाउंट वाले व्यक्ति का नंबर डालें",
+                    color = Color(0xFFADC1D7),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
                 )
+
+                Spacer(Modifier.height(30.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = panel.copy(alpha = 0.96f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("नया कॉल", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        Text("मोबाइल नंबर से खोजें", color = Color(0xFF9CB2C9), fontSize = 12.sp)
+                        Spacer(Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { input -> phone = input.filter { it.isDigit() }.take(10) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            placeholder = { Text("10 अंकों का मोबाइल नंबर") },
+                            leadingIcon = { Text("+91", color = cyan, fontWeight = FontWeight.Bold) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            shape = RoundedCornerShape(15.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = cyan,
+                                unfocusedBorderColor = Color(0xFF36506A),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = cyan
+                            )
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+                        Button(
+                            onClick = {
+                                notice = if (phone.length == 10) {
+                                    "नंबर सही है। यूज़र खोजने के लिए सर्वर कनेक्शन अगला चरण है।"
+                                } else {
+                                    "कृपया 10 अंकों का सही मोबाइल नंबर डालें।"
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = RoundedCornerShape(15.dp)
+                        ) {
+                            Text("यूज़र खोजें", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        Text(notice, color = Color(0xFFB9D3E8), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+
+                Spacer(Modifier.height(22.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    FeatureLabel("🔒", "निजी कॉल")
+                    FeatureLabel("🎙️", "केवल आवाज़")
+                    FeatureLabel("🇮🇳", "हिंदी")
+                }
 
                 Spacer(Modifier.weight(1f))
-
-                Icon(
-                    Icons.Default.Settings,
-                    null,
-                    tint = Color.LightGray
+                Text(
+                    "अभी शुरुआती स्क्रीन तैयार है • कॉल सर्वर और अकाउंट लॉगिन अगले चरण में जुड़ेंगे",
+                    color = Color(0xFF71869D),
+                    fontSize = 10.sp,
+                    textAlign = TextAlign.Center
                 )
             }
-
-            Text(
-                "WALKIE TALKIE • PRIVATE VOICE GROUP",
-                color = Color(0xFF8DC8FF),
-                fontSize = 11.sp
-            )
-
-            Spacer(Modifier.height(28.dp))
-
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF102B52)
-                ),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        "PERMANENT GROUP",
-                        color = Color.Cyan,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Text(
-                        "UJJWAL10  •  अधिकतम 10 सदस्य",
-                        color = Color.White,
-                        fontSize = 18.sp
-                    )
-
-                    Text(
-                        if (connected) "● Connected" else "● Disconnected",
-                        color = if (connected) Color.Green
-                        else Color(0xFFFFC04D)
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = onName,
-                        label = { Text("आपका नाम") },
-                        singleLine = true
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = onPassword,
-                        label = { Text("Group Password") },
-                        singleLine = true
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Button(
-                        onClick = onConnect,
-                        enabled = !busy && !connected,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (busy) "Connecting…"
-                            else if (connected) "Connected"
-                            else "Connect to Group"
-                        )
-                    }
-
-                    Text(
-                        status,
-                        color = Color.LightGray,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            Surface(
-                modifier = Modifier
-                    .size(220.dp)
-                    .pointerInput(connected) {
-                        detectTapGestures(
-                            onPress = {
-                                if (connected) {
-                                    onTalkStart()
-                                    tryAwaitRelease()
-                                    onTalkEnd()
-                                }
-                            }
-                        )
-                    },
-                shape = CircleShape,
-                color = if (connected) Color(0xFF0756B8)
-                else Color(0xFF17345F),
-                border = androidx.compose.foundation.BorderStroke(
-                    5.dp,
-                    Color.Cyan
-                ),
-                shadowElevation = 18.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Default.Mic,
-                            null,
-                            tint = Color.White,
-                            modifier = Modifier.size(62.dp)
-                        )
-
-                        Text(
-                            "PUSH TO TALK",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Text(
-                            "दबाकर बोलें",
-                            color = Color.Yellow,
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            Text(
-                "बोलते समय बटन दबाकर रखें",
-                color = Color(0xFF9CCBFF),
-                fontSize = 13.sp
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            Text(
-                if (connected)
-                    "ऊपर गोल माइक को दबाकर रखें और बोलें"
-                else
-                    "पहले ग्रुप से कनेक्ट करें",
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                "Ujjwal Talk • Version 1.0 • Hindi",
-                color = Color.Gray,
-                fontSize = 11.sp
-            )
         }
+    }
+}
+
+@Composable
+private fun FeatureLabel(symbol: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(symbol, fontSize = 19.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = Color(0xFF9CB2C9), fontSize = 11.sp)
     }
 }
