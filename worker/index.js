@@ -113,6 +113,7 @@ export default {
       }
 
       if (url.pathname === "/token") {
+        if (!env.LIVEKIT_URL || !env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET) return json({ error: "LIVEKIT_SETUP_REQUIRED" }, 500);
         const phone = String(data.phone || "");
         if (!validPhone(phone)) return json({ error: "INVALID_PHONE" }, 400);
         const caller = await env.DB.prepare("SELECT id, name FROM users WHERE id = ?").bind(auth.sub).first();
