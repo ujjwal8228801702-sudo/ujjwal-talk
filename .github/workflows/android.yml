@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - ujjwal-voice-ui
 
 jobs:
   build:
